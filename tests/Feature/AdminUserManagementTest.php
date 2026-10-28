@@ -7,8 +7,10 @@ use App\Models\ActivitySession;
 use App\Models\Terminal;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class AdminUserManagementTest extends TestCase
@@ -40,6 +42,7 @@ class AdminUserManagementTest extends TestCase
     {
         $admin = User::factory()->create(['role' => 'admin']);
         $academicGroup = $this->academicGroup();
+        Storage::fake('local');
         $terminal = Terminal::query()->create([
             'pc_name' => 'PC-01',
             'grid_x' => 1,
@@ -54,11 +57,20 @@ class AdminUserManagementTest extends TestCase
             'email' => 'newstudent@iskolarngbayan.pup.edu.ph',
             'role' => 'student',
             'academic_group_id' => $academicGroup->id,
+            'certificate' => UploadedFile::fake()->createWithContent(
+                'certificate.png',
+                file_get_contents(public_path('images/pup-favicon.png')),
+            ),
             'password' => 'Start!2026Abcd',
             'password_confirmation' => 'Start!2026Abcd',
         ])->assertRedirect();
 
         $student = User::query()->where('student_or_employee_id', '2026-99999-SR-0')->firstOrFail();
+        $this->assertSame(
+            'registration-certificates/2026-99999-SR-0.png',
+            $student->registration_certificate_path,
+        );
+        Storage::disk('local')->assertExists($student->registration_certificate_path);
         $this->assertNotNull($student->email_verified_at);
         $this->assertSame('New', $student->first_name);
         $this->assertSame('New PUP Student', $student->name);
@@ -91,6 +103,44 @@ class AdminUserManagementTest extends TestCase
             'logout_time' => now()->toDateTimeString(),
         ]);
         $this->assertSame('Updated Student', $session->fresh()->user->name);
+    }
+
+    public function test_admin_cannot_create_a_student_without_a_certificate_image(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $academicGroup = $this->academicGroup();
+        Storage::fake('local');
+
+        $this->actingAs($admin)
+            ->from(route('workspace.page', 'accounts'))
+            ->post(route('admin.users.store'), [
+                'first_name' => 'New',
+                'last_name' => 'Student',
+                'student_or_employee_id' => '2026-99996-SR-0',
+                'email' => 'newstudent@iskolarngbayan.pup.edu.ph',
+                'role' => 'student',
+                'academic_group_id' => $academicGroup->id,
+                'password' => 'Start!2026Abcd',
+                'password_confirmation' => 'Start!2026Abcd',
+            ])
+            ->assertRedirect(route('workspace.page', 'accounts'))
+            ->assertSessionHasErrors('certificate');
+
+        $this->assertDatabaseMissing('students', ['student_or_employee_id' => '2026-99996-SR-0']);
+        $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_admin_gets_a_friendly_prompt_when_the_certificate_request_is_too_large(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $this->actingAs($admin)
+            ->withServerVariables(['CONTENT_LENGTH' => (string) (13 * 1024 * 1024)])
+            ->post(route('admin.users.store'))
+            ->assertStatus(413)
+            ->assertSee('That file is too large.')
+            ->assertSee('no larger than 10 MB')
+            ->assertSee(route('workspace.page', 'accounts'));
     }
 
     public function test_admin_cannot_create_a_student_with_a_non_school_email(): void
@@ -276,7 +326,10 @@ class AdminUserManagementTest extends TestCase
             ->assertSee('User account management')
             ->assertSee('Create an instructor or student account')
             ->assertSee('Students')
-            ->assertSee('Faculty');
+            ->assertSee('Faculty')
+            ->assertSee('Certificate of registration image')
+            ->assertSee('class="account-certificate-field"', false)
+            ->assertSee('data-admin-account-form', false);
 
         $this->get(route('workspace.page', ['page' => 'accounts', 'role' => 'instructor']))
             ->assertOk()

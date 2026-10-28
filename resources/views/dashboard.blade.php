@@ -96,7 +96,7 @@
                             @csrf
                             <label class="profile-photo-label" for="profile-photo">Profile photo</label>
                             <input class="profile-photo-input" id="profile-photo" type="file" name="photo" accept="image/jpeg,image/png,image/webp" required>
-                            <small>JPG, PNG, or WebP. Maximum file size: 2 MB.</small>
+                            <small>JPG, PNG, or WebP; saved as JPEG. Maximum file size: 2 MB.</small>
                             @error('photo') <span class="form-error">{{ $message }}</span> @enderror
                             <button class="button button-secondary button-small" type="button" data-choose-profile-photo>Upload photo</button>
                         </form>
@@ -104,6 +104,18 @@
                             <div><dt>{{ auth()->user()->role === 'student' ? 'Student number' : 'Employee number' }}</dt><dd>{{ auth()->user()->student_or_employee_id }}</dd></div>
                             <div><dt>School email</dt><dd>{{ auth()->user()->email }}</dd></div>
                         </dl>
+                        @if (auth()->user()->role === 'admin')
+                            <details class="form-disclosure" @if ($errors->hasAny(['first_name', 'last_name'])) open @endif>
+                                <summary>Change your name</summary>
+                                <form method="POST" action="{{ route('admin.name-change.store') }}" class="account-create-form">
+                                    @csrf
+                                    <label>First name<input name="first_name" value="{{ old('first_name', auth()->user()->first_name) }}" maxlength="60" required></label>
+                                    <label>Last name<input name="last_name" value="{{ old('last_name', auth()->user()->last_name) }}" maxlength="60" required></label>
+                                    <p class="field-hint">We’ll send a confirmation link to {{ auth()->user()->email }}. Your name only changes after you confirm from that email.</p>
+                                    <button class="button button-secondary button-small" type="submit">Send confirmation email</button>
+                                </form>
+                            </details>
+                        @endif
                     </article>
                     <article class="panel overview-schedule">
                         <div class="panel-title-row"><div><span class="eyebrow">UP NEXT IN THE COMPUTER LAB</span><h2>{{ auth()->user()->role === 'student' ? 'Your class schedule' : 'Classes using the lab' }}</h2></div><a class="text-link" href="{{ route('workspace.page', 'classes') }}">View schedule</a></div>
@@ -209,9 +221,7 @@
                                         <form method="POST" action="{{ route('terminals.update', $terminal) }}" class="compact-form">
                                             @csrf @method('PATCH')
                                             <label>Station name<input name="pc_name" value="{{ $terminal->pc_name }}" required></label>
-                                            <div class="inline-fields"><label>Column<input type="number" name="grid_x" min="1" max="8" value="{{ $terminal->grid_x }}" required></label><label>Row<input type="number" name="grid_y" min="1" max="5" value="{{ $terminal->grid_y }}" required></label></div>
                                             <label>Base status<select name="status"><option value="available" @selected($terminal->status === 'available')>Ready</option><option value="maintenance" @selected($terminal->status === 'maintenance')>Maintenance</option></select></label>
-                                            <label>Specs<input name="specs_description" value="{{ $terminal->specs_description }}"></label>
                                             <button class="button button-primary button-small" type="submit">Save station</button>
                                         </form>
                                     </details>
@@ -281,6 +291,17 @@
                                 @if (in_array(auth()->user()->role, ['admin', 'instructor'], true))
                                     <a class="button button-secondary button-small" href="{{ route('schedules.students.index', $schedule) }}">Students ({{ $schedule->enrollments->count() }})</a>
                                     @if ($schedule->starts_at->isFuture())
+                                        <details class="form-disclosure schedule-edit" @if (old('edit_schedule_id') == $schedule->id) open @endif>
+                                            <summary>Edit class</summary>
+                                            <form method="POST" action="{{ route('schedules.update', $schedule) }}" class="inline-form schedule-form">
+                                                @csrf @method('PATCH')
+                                                <input type="hidden" name="edit_schedule_id" value="{{ $schedule->id }}">
+                                                <label>Subject code<input name="subject_code" value="{{ old('subject_code', $schedule->subject_code) }}" maxlength="30" required></label>
+                                                <label>Starts<input type="datetime-local" name="starts_at" value="{{ old('starts_at', $schedule->starts_at->format('Y-m-d\TH:i')) }}" min="{{ now()->format('Y-m-d\TH:i') }}" required></label>
+                                                <label>Ends<input type="datetime-local" name="ends_at" value="{{ old('ends_at', $schedule->ends_at->format('Y-m-d\TH:i')) }}" required></label>
+                                                <button class="button button-primary button-small" type="submit">Save changes</button>
+                                            </form>
+                                        </details>
                                         <form method="POST" action="{{ route('schedules.start', $schedule) }}">
                                             @csrf
                                             <button class="button button-primary button-small" type="submit">Start class</button>
@@ -417,19 +438,20 @@
                             Faculty <span>{{ $managedAccountCounts['instructor'] }}</span>
                         </a>
                     </nav>
-                    <details class="form-disclosure">
+                    <details class="form-disclosure" @if ($errors->hasAny(['certificate', 'role', 'first_name', 'last_name', 'student_or_employee_id', 'email', 'academic_group_id', 'password'])) open @endif>
                         <summary>+ Create an instructor or student account</summary>
-                        <form method="POST" action="{{ route('admin.users.store') }}" class="account-create-form">
+                        <form method="POST" action="{{ route('admin.users.store') }}" class="account-create-form" enctype="multipart/form-data" data-admin-account-form>
                             @csrf
                             <label>First name<input name="first_name" maxlength="60" required></label>
                             <label>Last name<input name="last_name" maxlength="60" required></label>
                             <label>Student / employee number<input name="student_or_employee_id" maxlength="16" pattern="([0-9]{4}-[0-9]{5}-SR-0|FA-[0-9]{4}-SR-[0-9]{4})" title="Student: YYYY-#####-SR-0 · Employee: FA-####-SR-####" placeholder="2026-01234-SR-0 or FA-1234-SR-5678" required></label>
                             <label>Email<input type="email" name="email" maxlength="255" required></label>
                             <p class="field-hint">Students must use {{ '@'.config('app.student_email_domain') }}; employees/faculty must use @pup.edu.ph.</p>
-                            <label>Role<select name="role" required><option value="student">Student</option><option value="instructor">Instructor</option></select></label>
+                            <label>Role<select name="role" required data-admin-account-role><option value="student" @selected(old('role', 'student') === 'student')>Student</option><option value="instructor" @selected(old('role') === 'instructor')>Instructor</option></select></label>
                             <label>Course / section (students)<select name="academic_group_id"><option value="">Select a student course / section</option>@foreach ($selectableAcademicGroups as $academicGroup)<option value="{{ $academicGroup->id }}">{{ $academicGroup->label }}</option>@endforeach</select></label>
                             <label>Password<input type="password" name="password" minlength="12" maxlength="16" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{12,16}" title="12–16 characters with uppercase, lowercase, a number, and a special character" autocomplete="new-password" required></label>
                             <label>Confirm password<input type="password" name="password_confirmation" minlength="12" maxlength="16" autocomplete="new-password" required></label>
+                            <label class="account-certificate-field" data-student-certificate-field>Certificate of registration image<input type="file" name="certificate" accept="image/jpeg,image/png,image/webp" required data-student-certificate><small class="field-hint">Required for student accounts. JPG, PNG, or WebP; maximum 10 MB.</small></label>
                             <p class="field-hint">Passwords need 12–16 characters, with uppercase and lowercase letters, a number, and a special character.</p>
                             <p class="field-hint">Accounts created by an administrator are marked as verified.</p>
                             <button class="button button-primary button-small" type="submit">Create account</button>

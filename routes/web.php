@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AcademicGroupRequestController;
+use App\Http\Controllers\AdminProfileController;
 use App\Http\Controllers\AccountPasswordController;
 use App\Http\Controllers\AdminAcademicGroupController;
 use App\Http\Controllers\AdminUserController;
@@ -45,6 +46,13 @@ Route::middleware('auth')->group(function () {
         ->name('verification.send');
 });
 
+Route::get('/account/name-change/{token}', [AdminProfileController::class, 'confirmNameChange'])
+    ->middleware(['signed', 'throttle:6,1'])
+    ->name('admin.name-change.confirm');
+Route::post('/account/name-change/{token}', [AdminProfileController::class, 'applyNameChange'])
+    ->middleware(['signed', 'throttle:6,1'])
+    ->name('admin.name-change.apply');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', [LabController::class, 'dashboard'])->name('dashboard');
     Route::get('/account/password', [AccountPasswordController::class, 'edit'])->name('password.change');
@@ -64,6 +72,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::middleware('role:admin,instructor')->group(function () {
         Route::post('/schedules', [LabController::class, 'createSchedule'])->name('schedules.store');
+        Route::patch('/schedules/{schedule}', [LabController::class, 'updateSchedule'])->name('schedules.update');
         Route::post('/schedules/{schedule}/start', [LabController::class, 'startSchedule'])->name('schedules.start');
         Route::post('/schedules/{schedule}/dismiss', [LabController::class, 'dismissSchedule'])->name('schedules.dismiss');
         Route::delete('/schedules/{schedule}', [LabController::class, 'cancelSchedule'])->name('schedules.cancel');
@@ -87,6 +96,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
     Route::middleware('role:admin')->group(function () {
+        Route::post('/account/name-change', [AdminProfileController::class, 'requestNameChange'])
+            ->name('admin.name-change.store');
         Route::post('/admin/academic-group-requests/{academicGroupRequest}/approve', [AcademicGroupRequestController::class, 'approve'])
             ->name('admin.academic-group-requests.approve');
         Route::post('/admin/academic-group-requests/{academicGroupRequest}/reject', [AcademicGroupRequestController::class, 'reject'])

@@ -14,7 +14,6 @@ use App\Models\Terminal;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -189,17 +188,7 @@ class LabController extends Controller
     {
         $data = $request->validate([
             'pc_name' => ['required', 'string', 'max:30', Rule::unique('terminals', 'pc_name')->ignore($terminal->id)],
-            'grid_x' => [
-                'required',
-                'integer',
-                'between:1,8',
-                Rule::unique('terminals', 'grid_x')
-                    ->where(fn (QueryBuilder $query) => $query->where('grid_y', $request->input('grid_y')))
-                    ->ignore($terminal->id),
-            ],
-            'grid_y' => ['required', 'integer', 'between:1,5'],
             'status' => ['required', Rule::in(['available', 'maintenance'])],
-            'specs_description' => ['nullable', 'string', 'max:500'],
         ]);
         $terminal->update($data);
 
@@ -319,10 +308,12 @@ class LabController extends Controller
             'starts_at' => ['required', 'date', 'after:now'],
             'ends_at' => ['required', 'date', 'after:starts_at'],
         ]);
+        $startsAt = CarbonImmutable::parse($data['starts_at'])->toDateTimeString();
+        $endsAt = CarbonImmutable::parse($data['ends_at'])->toDateTimeString();
         $hasConflict = ClassSchedule::query()
             ->whereNull('dismissed_at')
-            ->where('starts_at', '<', $data['ends_at'])
-            ->where('ends_at', '>', $data['starts_at'])
+            ->where('starts_at', '<', $endsAt)
+            ->where('ends_at', '>', $startsAt)
             ->exists();
         if ($hasConflict) {
             return back()->withErrors(['starts_at' => 'The computer lab already has a class scheduled during this time. Choose a different time.'])->withInput();
@@ -338,6 +329,38 @@ class LabController extends Controller
         });
 
         return back()->with('success', 'Class schedule created.');
+    }
+
+    public function updateSchedule(Request $request, ClassSchedule $schedule): RedirectResponse
+    {
+        abort_unless(
+            $request->user()->role === 'admin' || $schedule->instructor_id === $request->user()->id,
+            403,
+        );
+        abort_if($schedule->dismissed_at || ! $schedule->starts_at->isFuture(), 422, 'Only upcoming classes can be edited.');
+
+        $data = $request->validate([
+            'subject_code' => ['required', 'string', 'max:30'],
+            'starts_at' => ['required', 'date', 'after:now'],
+            'ends_at' => ['required', 'date', 'after:starts_at'],
+        ]);
+        $startsAt = CarbonImmutable::parse($data['starts_at'])->toDateTimeString();
+        $endsAt = CarbonImmutable::parse($data['ends_at'])->toDateTimeString();
+        $hasConflict = ClassSchedule::query()
+            ->whereKeyNot($schedule->id)
+            ->whereNull('dismissed_at')
+            ->where('starts_at', '<', $endsAt)
+            ->where('ends_at', '>', $startsAt)
+            ->exists();
+        if ($hasConflict) {
+            return back()
+                ->withErrors(['starts_at' => 'The computer lab already has a class scheduled during this time. Choose a different time.'])
+                ->withInput();
+        }
+
+        $schedule->update($data);
+
+        return back()->with('success', 'Class schedule updated.');
     }
 
     public function cancelSchedule(Request $request, ClassSchedule $schedule): RedirectResponse
@@ -626,8 +649,8 @@ class LabController extends Controller
         $attendees = $schedule->enrollments
             ->filter(fn (ScheduleEnrollment $enrollment) => $attendanceByStudent->has($enrollment->user_id))
             ->map(fn (ScheduleEnrollment $enrollment) => [
-                'name' => $enrollment->student->name,
-                'student_number' => $enrollment->student->student_or_employee_id,
+                'name' => $enrollment->student?->name ?? 'Student account unavailable',
+                'student_number' => $enrollment->student?->student_or_employee_id ?? 'Unavailable',
                 'late' => $attendanceByStudent[$enrollment->user_id]->login_time->gt($lateCutoff),
             ])
             ->values();
@@ -635,8 +658,8 @@ class LabController extends Controller
         $absentees = $schedule->enrollments
             ->reject(fn (ScheduleEnrollment $enrollment) => $attendanceByStudent->has($enrollment->user_id))
             ->map(fn (ScheduleEnrollment $enrollment) => [
-                'name' => $enrollment->student->name,
-                'student_number' => $enrollment->student->student_or_employee_id,
+                'name' => $enrollment->student?->name ?? 'Student account unavailable',
+                'student_number' => $enrollment->student?->student_or_employee_id ?? 'Unavailable',
             ])
             ->values();
         $durationMinutes = max(0, (int) $schedule->starts_at->diffInMinutes($schedule->dismissed_at));

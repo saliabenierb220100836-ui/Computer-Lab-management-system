@@ -58,18 +58,36 @@ class AdminUserController extends Controller
             ],
             'role' => ['required', Rule::in(['instructor', 'student'])],
             'academic_group_id' => $groupRule,
+            'certificate' => $role === 'student'
+                ? ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:10240']
+                : ['exclude'],
             'password' => ['required', 'confirmed', AccountPasswordPolicy::rule()],
         ], [
             'student_or_employee_id.regex' => $role === 'student'
                 ? 'Enter a student number in YYYY-#####-SR-0 format, for example 2026-01234-SR-0.'
                 : 'Enter an employee number in FA-####-SR-#### format, for example FA-1234-SR-5678.',
+            'certificate.max' => 'The certificate image must not exceed 10 MB.',
+            'certificate.uploaded' => 'The certificate image must not exceed 10 MB.',
         ]);
 
         $data['name'] = trim($data['first_name'].' '.$data['last_name']);
         if ($role === 'student') {
             $data['section'] = AcademicGroup::query()->findOrFail($data['academic_group_id'])->section;
         }
+        $certificate = $data['certificate'] ?? null;
+        unset($data['certificate']);
         $account = $role === 'instructor' ? new Faculty : new Student;
+        if ($role === 'student') {
+            $certificatePath = $certificate->storeAs(
+                'registration-certificates',
+                $data['student_or_employee_id'].'.'.$certificate->extension(),
+                'local',
+            );
+            if (! $certificatePath) {
+                abort(500, 'Unable to save the registration certificate image.');
+            }
+            $data['registration_certificate_path'] = $certificatePath;
+        }
         $account->fill($data + ['email_verified_at' => now()])->save();
 
         return back()->with('success', 'The account has been created and verified by an administrator.');

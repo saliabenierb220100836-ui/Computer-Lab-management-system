@@ -40,7 +40,7 @@
             <p class="field-hint">Only <strong>{{ '@'.$emailDomain }}</strong> addresses are accepted.</p>
             <label for="certificate">Certificate of registration image</label>
             <input id="certificate" type="file" name="certificate" accept="image/jpeg,image/png,image/webp" required>
-            <p class="field-hint">Upload a JPG, PNG, or WebP image (maximum 5 MB). Only instructors assigned to your class can view it.</p>
+            <p class="field-hint">Upload a JPG, PNG, or WebP image (maximum 10 MB). Only instructors assigned to your class can view it.</p>
             <label for="password">Password</label>
             <input id="password" type="password" name="password" autocomplete="new-password" minlength="12" maxlength="16" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{12,16}" title="12–16 characters with uppercase, lowercase, a number, and a special character" required>
             <p class="field-hint">12–16 characters; include uppercase and lowercase letters, a number, and a special character.</p>

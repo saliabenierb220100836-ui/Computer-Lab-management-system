@@ -15,13 +15,79 @@ document.querySelectorAll('.profile-photo-form').forEach((form) => {
 
     if (fileInput instanceof HTMLInputElement && chooseButton instanceof HTMLButtonElement) {
         chooseButton.addEventListener('click', () => fileInput.click());
-        fileInput.addEventListener('change', () => {
-            if (fileInput.files?.length) {
+        fileInput.addEventListener('change', async () => {
+            const photo = fileInput.files?.[0];
+            if (!photo) {
+                return;
+            }
+
+            const maxPhotoBytes = 2 * 1024 * 1024;
+            fileInput.setCustomValidity('');
+
+            if (photo.size > maxPhotoBytes) {
+                fileInput.value = '';
+                fileInput.setCustomValidity('Choose an image that is no larger than 2 MB.');
+                fileInput.reportValidity();
+                return;
+            }
+
+            try {
+                const jpeg = photo.type === 'image/jpeg'
+                    ? photo
+                    : await convertProfilePhotoToJpeg(photo);
+                if (jpeg.size > maxPhotoBytes) {
+                    throw new RangeError('The converted image is larger than 2 MB.');
+                }
+
+                const transfer = new DataTransfer();
+                transfer.items.add(new File([jpeg], 'profile-photo.jpeg', {
+                    type: 'image/jpeg',
+                    lastModified: Date.now(),
+                }));
+                fileInput.files = transfer.files;
                 form.requestSubmit();
+            } catch (error) {
+                console.error('Unable to convert the profile photo to JPEG.', error);
+                fileInput.value = '';
+                fileInput.setCustomValidity(error instanceof RangeError
+                    ? 'The converted image is larger than 2 MB. Choose a smaller image.'
+                    : 'This image could not be converted. Please choose another JPG, PNG, or WebP image.');
+                fileInput.reportValidity();
             }
         });
     }
 });
+
+async function convertProfilePhotoToJpeg(photo) {
+    const bitmap = await createImageBitmap(photo);
+
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+
+        const context = canvas.getContext('2d');
+        if (!context) {
+            throw new Error('Unable to prepare the profile photo for conversion.');
+        }
+
+        context.fillStyle = '#fff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(bitmap, 0, 0);
+
+        return await new Promise((resolve, reject) => {
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    resolve(blob);
+                } else {
+                    reject(new Error('The browser could not convert the profile photo.'));
+                }
+            }, 'image/jpeg', 0.9);
+        });
+    } finally {
+        bitmap.close();
+    }
+}
 
 document.querySelectorAll('.roster-import-form').forEach((form) => {
     const fileInput = form.querySelector('.roster-import-input');
@@ -34,6 +100,28 @@ document.querySelectorAll('.roster-import-form').forEach((form) => {
                 form.requestSubmit();
             }
         });
+    }
+});
+
+document.querySelectorAll('[data-admin-account-form]').forEach((form) => {
+    const roleSelect = form.querySelector('[data-admin-account-role]');
+    const certificateField = form.querySelector('[data-student-certificate-field]');
+    const certificateInput = form.querySelector('[data-student-certificate]');
+
+    if (
+        roleSelect instanceof HTMLSelectElement
+        && certificateField instanceof HTMLLabelElement
+        && certificateInput instanceof HTMLInputElement
+    ) {
+        const updateCertificateRequirement = () => {
+            const isStudent = roleSelect.value === 'student';
+            certificateField.hidden = !isStudent;
+            certificateInput.required = isStudent;
+            certificateInput.disabled = !isStudent;
+        };
+
+        roleSelect.addEventListener('change', updateCertificateRequirement);
+        updateCertificateRequirement();
     }
 });
 

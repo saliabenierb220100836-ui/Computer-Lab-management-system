@@ -54,6 +54,9 @@ class LabAccessTest extends TestCase
         $this->get(route('workspace.page', 'floor-map'))
             ->assertOk()
             ->assertSee('40 STATIONS')
+            ->assertDontSee('name="grid_x"', false)
+            ->assertDontSee('name="grid_y"', false)
+            ->assertDontSee('name="specs_description"', false)
             ->assertDontSee('Schedule a lab slot');
 
         $this->get(route('workspace.page', 'classes'))
@@ -104,15 +107,20 @@ class LabAccessTest extends TestCase
     {
         $admin = User::factory()->create(['role' => 'admin']);
         $terminal = $this->terminal('PC-01');
-        $terminal->update(['status' => 'maintenance']);
+        $terminal->update([
+            'status' => 'maintenance',
+            'grid_x' => 3,
+            'grid_y' => 2,
+            'specs_description' => 'Existing workstation specifications',
+        ]);
 
         $this->actingAs($admin)
             ->patch(route('terminals.update', $terminal), [
                 'pc_name' => 'PC-01',
+                'status' => 'available',
                 'grid_x' => 1,
                 'grid_y' => 1,
-                'status' => 'available',
-                'specs_description' => 'Standard lab workstation',
+                'specs_description' => 'Attempted replacement',
             ])
             ->assertRedirect()
             ->assertSessionHasNoErrors();
@@ -120,6 +128,9 @@ class LabAccessTest extends TestCase
         $this->assertDatabaseHas('terminals', [
             'id' => $terminal->id,
             'status' => 'available',
+            'grid_x' => 3,
+            'grid_y' => 2,
+            'specs_description' => 'Existing workstation specifications',
         ]);
     }
 
@@ -238,20 +249,20 @@ class LabAccessTest extends TestCase
     public function test_user_can_upload_a_profile_photo_and_see_it_on_the_dashboard(): void
     {
         Storage::fake('public');
-        $user = User::factory()->create();
+        $user = User::factory()->create([
+            'student_or_employee_id' => '2026-12345-SR-0',
+        ]);
 
         $response = $this->actingAs($user)
             ->post(route('profile.photo.store'), [
-                'photo' => UploadedFile::fake()->createWithContent(
-                    'profile.png',
-                    file_get_contents(public_path('images/pup-favicon.png')),
-                ),
+                'photo' => $this->jpegProfilePhoto(),
             ]);
 
         $response->assertRedirect();
         $user->refresh();
-        $this->assertNotNull($user->profile_photo_path);
+        $this->assertSame('profile-photos/2026-12345-SR-0.jpeg', $user->profile_photo_path);
         Storage::disk('public')->assertExists($user->profile_photo_path);
+        $this->assertSame("\xFF\xD8", substr(Storage::disk('public')->get($user->profile_photo_path), 0, 2));
 
         $this->get(route('dashboard'))
             ->assertOk()
@@ -259,6 +270,53 @@ class LabAccessTest extends TestCase
             ->assertSee('data-choose-profile-photo', false)
             ->assertSee('type="button" data-choose-profile-photo', false)
             ->assertSee('storage/'.$user->profile_photo_path);
+    }
+
+    public function test_profile_photo_filenames_use_each_account_number(): void
+    {
+        Storage::fake('public');
+        $accounts = [
+            ['role' => 'student', 'student_or_employee_id' => '2026-12345-SR-0'],
+            ['role' => 'instructor', 'student_or_employee_id' => 'FA-1234-SR-5678'],
+            ['role' => 'admin', 'student_or_employee_id' => 'FA-9876-SR-1234'],
+        ];
+
+        foreach ($accounts as $account) {
+            $user = User::factory()->create($account);
+
+            $this->actingAs($user)
+                ->post(route('profile.photo.store'), [
+                    'photo' => $this->jpegProfilePhoto(),
+                ])
+                ->assertRedirect();
+
+            $this->assertSame(
+                'profile-photos/'.$account['student_or_employee_id'].'.jpeg',
+                $user->fresh()->profile_photo_path,
+            );
+            Storage::disk('public')->assertExists($user->fresh()->profile_photo_path);
+        }
+    }
+
+    public function test_replacing_a_profile_photo_keeps_its_numbered_jpeg_file(): void
+    {
+        Storage::fake('public');
+        $user = User::factory()->create([
+            'student_or_employee_id' => '2026-54321-SR-0',
+        ]);
+
+        foreach ([1, 2] as $_) {
+            $this->actingAs($user)
+                ->post(route('profile.photo.store'), [
+                    'photo' => $this->jpegProfilePhoto(),
+                ])
+                ->assertRedirect();
+        }
+
+        $user->refresh();
+        $this->assertSame('profile-photos/2026-54321-SR-0.jpeg', $user->profile_photo_path);
+        Storage::disk('public')->assertExists($user->profile_photo_path);
+        $this->assertCount(1, Storage::disk('public')->allFiles());
     }
 
     public function test_profile_photo_upload_rejects_non_image_files_and_oversized_images(): void
@@ -277,13 +335,32 @@ class LabAccessTest extends TestCase
         $this->actingAs($user)
             ->from(route('dashboard'))
             ->post(route('profile.photo.store'), [
-                'photo' => UploadedFile::fake()->create('large.png', 2049, 'image/png'),
+                'photo' => UploadedFile::fake()->createWithContent(
+                    'profile.png',
+                    file_get_contents(public_path('images/pup-favicon.png')),
+                ),
+            ])
+            ->assertRedirect(route('dashboard'))
+            ->assertSessionHasErrors('photo');
+
+        $this->actingAs($user)
+            ->from(route('dashboard'))
+            ->post(route('profile.photo.store'), [
+                'photo' => UploadedFile::fake()->create('large.jpeg', 2049, 'image/jpeg'),
             ])
             ->assertRedirect(route('dashboard'))
             ->assertSessionHasErrors('photo');
 
         $this->assertNull($user->fresh()->profile_photo_path);
         $this->assertSame([], Storage::disk('public')->allFiles());
+    }
+
+    private function jpegProfilePhoto(): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent(
+            'profile.jpeg',
+            base64_decode('/9j/4AAQSkZJRgABAgAAAQABAAD//gAQTGF2YzYyLjI4LjEwMQD/2wBDAAgGBgcGBwgICAgICAkJCQoKCgkJCQkKCgoKCgoMDAwKCgoKCgoKDAwMDA0ODQ0NDA0ODg8PDxISEREVFRUZGR//xABMAAEBAAAAAAAAAAAAAAAAAAAABgEBAQAAAAAAAAAAAAAAAAAABgcQAQAAAAAAAAAAAAAAAAAAAAARAQAAAAAAAAAAAAAAAAAAAAD/wAARCAAQABADASIAAhEAAxEA/9oADAMBAAIRAxEAPwCLAE1/f//Z', true),
+        );
     }
 
     public function test_instructor_overview_shows_their_profile_and_upcoming_lab_classes(): void
@@ -679,6 +756,33 @@ class LabAccessTest extends TestCase
         $this->assertStringContainsString('Late', $csv);
         $this->assertStringContainsString('Absent Student', $csv);
         $this->assertStringContainsString('Absent', $csv);
+    }
+
+    public function test_admin_session_log_handles_dismissed_classes_with_deactivated_students(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $instructor = User::factory()->create(['role' => 'instructor']);
+        $student = User::factory()->create(['name' => 'Deactivated Student']);
+        $schedule = ClassSchedule::query()->create([
+            'instructor_id' => $instructor->id,
+            'subject_code' => 'CS 201',
+            'section' => 'BSCS 2-1',
+            'room_number' => 'Lab 01',
+            'starts_at' => now()->subHours(2),
+            'ends_at' => now()->subHour(),
+            'dismissed_at' => now()->subHour(),
+        ]);
+        ScheduleEnrollment::query()->create([
+            'schedule_id' => $schedule->id,
+            'user_id' => $student->id,
+        ]);
+        $student->delete();
+
+        $this->actingAs($admin)
+            ->get(route('workspace.page', 'session-log'))
+            ->assertOk()
+            ->assertSee('Completed classes')
+            ->assertSee($schedule->subject_code);
     }
 
     public function test_dismissing_a_class_checks_out_its_active_student_sessions(): void

@@ -125,10 +125,12 @@ class RegistrationController extends Controller
                     }
                 },
             ],
-            'certificate' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'certificate' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
             'password' => ['required', 'confirmed', AccountPasswordPolicy::rule()],
         ], [
             'student_or_employee_id.regex' => 'Enter your student number in YYYY-#####-SR-0 format, for example 2026-01234-SR-0.',
+            'certificate.max' => 'The certificate image must not exceed 10 MB.',
+            'certificate.uploaded' => 'The certificate image must not exceed 10 MB.',
         ]);
 
         $user = DB::transaction(function () use ($validated): Student {
@@ -143,7 +145,11 @@ class RegistrationController extends Controller
                 'email' => strtolower($validated['email']),
                 'password' => $validated['password'],
             ]);
-            $certificatePath = $validated['certificate']->store('registration-certificates', 'local');
+            $certificatePath = $validated['certificate']->storeAs(
+                'registration-certificates',
+                $validated['student_or_employee_id'].'.'.$validated['certificate']->extension(),
+                'local',
+            );
             if (! $certificatePath) {
                 abort(500, 'Unable to save the registration certificate image.');
             }

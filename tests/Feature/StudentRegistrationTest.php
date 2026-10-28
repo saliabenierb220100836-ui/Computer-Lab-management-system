@@ -61,7 +61,10 @@ class StudentRegistrationTest extends TestCase
         $this->assertSame('PUP', $student->first_name);
         $this->assertSame('Student', $student->last_name);
         $this->assertSame('BSIT 3-1', $student->section);
-        $this->assertNotNull($student->registration_certificate_path);
+        $this->assertSame(
+            'registration-certificates/2026-01234-SR-0.png',
+            $student->registration_certificate_path,
+        );
         Storage::disk('local')->assertExists($student->registration_certificate_path);
         $this->assertNull($student->email_verified_at);
         Notification::assertSentTo($student, VerifyEmail::class);
@@ -83,6 +86,36 @@ class StudentRegistrationTest extends TestCase
 
         $this->assertDatabaseCount('students', 0);
         $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_student_registration_rejects_certificate_images_over_10_mb(): void
+    {
+        $this->academicGroup();
+        Storage::fake('local');
+
+        $this->from(route('register'))
+            ->post(route('register.store'), $this->registrationData([
+                'certificate' => UploadedFile::fake()->createWithContent(
+                    'certificate.png',
+                    file_get_contents(public_path('images/pup-favicon.png')),
+                )->size(10241),
+            ]))
+            ->assertRedirect(route('register'))
+            ->assertSessionHasErrors([
+                'certificate' => 'The certificate image must not exceed 10 MB.',
+            ]);
+
+        $this->assertDatabaseCount('students', 0);
+        $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_post_exceeding_the_php_request_limit_shows_a_friendly_upload_prompt(): void
+    {
+        $this->withServerVariables(['CONTENT_LENGTH' => (string) (9 * 1024 * 1024)])
+            ->post(route('register.store'))
+            ->assertStatus(413)
+            ->assertSee('That file is too large.')
+            ->assertSee('no larger than 10 MB');
     }
 
     public function test_legacy_malformed_academic_groups_cannot_be_selected_for_registration(): void
