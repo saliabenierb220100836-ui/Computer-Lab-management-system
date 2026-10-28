@@ -24,7 +24,7 @@ class DatabaseSeeder extends Seeder
         $administrator = Administrator::withTrashed()->updateOrCreate(
             ['student_or_employee_id' => 'FA-0001-SR-0001'],
             [
-                'name' => 'Lab Administrator',
+                'name' => 'Irene Cepeda',
                 'email' => config('app.admin_email'),
                 'password' => Hash::make($adminPassword),
                 'email_verified_at' => now(),
