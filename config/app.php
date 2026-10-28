@@ -85,6 +85,8 @@ return [
     'faker_locale' => env('APP_FAKER_LOCALE', 'en_US'),
 
     'student_email_domain' => env('STUDENT_EMAIL_DOMAIN', 'iskolarngbayan.pup.edu.ph'),
+    'admin_email' => env('ADMIN_EMAIL', 'ComLabAdmin@pup.edu.ph'),
+    'admin_password' => env('ADMIN_PASSWORD'),
 
     /*
     |--------------------------------------------------------------------------

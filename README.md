@@ -1,6 +1,58 @@
 # PUP - SRComLab — Computer Lab Management
 
-A Laravel 13, Blade, and Tailwind application for computer-lab access, student accounts, course rosters, attendance, and maintenance.
+A Laravel 13, Blade, and Tailwind application for managing computer-lab access, student accounts, course rosters, attendance tracking, and maintenance operations.
+
+## Overview
+
+This project supports a campus computer lab workflow where:
+
+- administrators manage user accounts, stations, and maintenance requests;
+- instructors schedule classes, manage rosters, and review attendance;
+- students check in to lab stations, view their active session, and report faults.
+
+The app includes a role-based dashboard, floor-map station status monitoring, class scheduling, CSV-based roster imports, and secure account verification for school-managed email accounts.
+
+## Prerequisites
+
+Before running the app locally, make sure you have:
+
+- PHP 8.3+
+- Composer
+- Node.js 18+
+- npm
+- A local database supported by Laravel (SQLite is the default in this project)
+
+## Quick start
+
+```powershell
+copy .env.example .env
+php artisan key:generate
+composer install
+npm install
+# Edit .env and set ADMIN_PASSWORD to your own 12–16 character strong password.
+php artisan migrate --seed
+php artisan storage:link
+npm run build
+php artisan serve
+```
+
+Then open `http://127.0.0.1:8000`.
+
+> The project defaults to SQLite in `.env.example`. If you need a different database, update the `DB_` settings in `.env` before running migrations.
+
+## Initial administrator
+
+On a fresh database, `php artisan migrate --seed` creates one administrator and the 40-terminal inventory. It does not create faculty, student, class, roster, or session data.
+
+The default administrator email is `ComLabAdmin@pup.edu.ph` and the employee number is `FA-0001-SR-0001`. Set a private `ADMIN_PASSWORD` in your local `.env` before seeding. Use 12–16 characters with uppercase and lowercase letters, a number, and a special character. The password is not stored in this repository.
+
+## Environment notes
+
+- `STUDENT_EMAIL_DOMAIN` in `.env` controls the allowed student email domain.
+- `ADMIN_EMAIL` controls the email assigned to the seeded administrator.
+- `ADMIN_PASSWORD` is required when seeding and must meet the application's password requirements.
+- `MAIL_MAILER=log` is enabled by default for local development, so verification and password reset emails are written to `storage/logs/laravel.log`.
+- For real deployments, configure SMTP or another mail provider in `.env`.
 
 ## Account database structure
 
@@ -13,21 +65,14 @@ Administrator, faculty, and student accounts are stored separately in the `admin
 ```powershell
 composer install
 npm install
+# Set ADMIN_PASSWORD in .env before running the seeder on a fresh database.
 php artisan migrate --seed
 php artisan storage:link
 npm run build
 php artisan serve
 ```
 
-Open `http://127.0.0.1:8000`. The seed data provides:
-
-| Role | Email | Campus ID | Password |
-|---|---|---|---|
-| Lab administrator | `admin@lab.test` | `FA-0001-SR-0001` | `C0mputer!Lab2026` |
-| Instructor | `instructor@pup.edu.ph` | `FA-1234-SR-5678` | `C0mputer!Lab2026` |
-| Student | `alex.morgan@iskolarngbayan.pup.edu.ph` | `2024-01234-SR-0` | `C0mputer!Lab2026` |
-
-These are demo credentials only. Change or remove them before deploying.
+Open `http://127.0.0.1:8000` and sign in with the seeded administrator email and the password you set in `.env`.
 
 The storage link exposes uploaded public assets, including user profile photos.
 
